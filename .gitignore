@@ -1,3 +1,4 @@
 logs/
 hj_avoid.egg-info/
 **/__pycache__/
+**/wandb/
