@@ -1,0 +1,13 @@
+Loaded pre-trained model from /home/nishrao/Projects/HJ_avoid/logs/safedqn_cartpole_2025-08-06_18-48-00/model/q_network.pth
+Model saved to /home/nishrao/Projects/HJ_avoid/logs/safedqn_cartpole_2025-08-06_19-32-03/model/q_network.pth
+[33mManual mode is enabled![0m
+You can now interact with the environment manually.
+False {'l_value': np.float32(0.6864289)}
+False {'l_value': np.float32(0.6482363)}
+False {'l_value': np.float32(0.37278938)}
+False {'l_value': np.float32(0.0949927)}
+True {'l_value': np.float32(-0.18693876)}
+False {'l_value': np.float32(0.7116051)}
+False {'l_value': np.float32(0.46739328)}
+False {'l_value': np.float32(0.17759866)}
+True {'l_value': np.float32(-0.11556506)}

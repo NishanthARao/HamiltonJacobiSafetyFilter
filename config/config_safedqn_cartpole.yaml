@@ -1,0 +1,35 @@
+exp_name: "safedqn_cartpole"
+seed: 1
+torch_deterministic: True
+cuda: False
+wandb_project_name: safe_dqn_filter
+wandb_entity: None
+env_id: "SafeCartPole-v1"
+total_timesteps: 750_000
+learning_rate: 2.5e-4
+buffer_size: 10_000
+gamma: 0.85
+tau: 1.0
+target_network_frequency: 500
+batch_size: 128
+eps_start: 1.0
+eps_end: 0.05
+exploration_fraction: 0.5
+learning_starts: 10_000
+train_frequency: 10
+train_model: False
+#eval_model_path: None
+eval_model_path: "/home/nishrao/Projects/HJ_avoid/logs/safedqn_cartpole_2025-08-06_18-48-00/model/q_network.pth"
+manual_mode: True
+safety_filter_args:
+  USE_SAFETY_FILTER: True
+  GAMMA_START: 0.85
+  GAMMA_END: 0.99
+  GAMMA_ANNEAL_STEPS: 400_000
+  LRSF_SAFETY_FILTER_EPSILON: 0.57
+  QCBF_SAFETY_FILTER_EPSILON: 0.99
+  SAFE_MARGIN_VALUES:
+    pos: 2.0
+    theta: 0.174533
+    vel: 1.0
+    om: 1.0

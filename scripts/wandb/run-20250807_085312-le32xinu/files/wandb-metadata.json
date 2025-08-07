@@ -1,0 +1,36 @@
+{
+  "os":  "Linux-6.8.0-60-generic-x86_64-with-glibc2.35",
+  "python":  "CPython 3.10.18",
+  "startedAt":  "2025-08-07T12:53:12.628220Z",
+  "program":  "/home/nishrao/Projects/HJ_avoid/scripts/safety_filter_dqn.py",
+  "codePath":  "scripts/safety_filter_dqn.py",
+  "codePathLocal":  "safety_filter_dqn.py",
+  "email":  "nr1053@princeton.edu",
+  "root":  "/home/nishrao/Projects/HJ_avoid/scripts",
+  "host":  "saferoboticslab-workstation-4",
+  "executable":  "/home/nishrao/ENTER/envs/safe/bin/python3",
+  "cpu_count":  16,
+  "cpu_count_logical":  32,
+  "gpu":  "NVIDIA GeForce RTX 5090",
+  "gpu_count":  1,
+  "disk":  {
+    "/":  {
+      "total":  "3842080538624",
+      "used":  "289546903552"
+    }
+  },
+  "memory":  {
+    "total":  "98747719680"
+  },
+  "gpu_nvidia":  [
+    {
+      "name":  "NVIDIA GeForce RTX 5090",
+      "memoryTotal":  "34190917632",
+      "cudaCores":  21760,
+      "architecture":  "Blackwell",
+      "uuid":  "GPU-734a507e-c6d8-4b92-3a83-f04ad0c481db"
+    }
+  ],
+  "cudaVersion":  "12.9",
+  "writerId":  "niuxklk1pz0p0ziegxigjgb6vhjsr9wv"
+}

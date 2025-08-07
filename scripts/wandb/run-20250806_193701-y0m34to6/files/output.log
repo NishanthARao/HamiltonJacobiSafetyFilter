@@ -1,0 +1,16 @@
+Loaded pre-trained model from /home/nishrao/Projects/HJ_avoid/logs/safedqn_cartpole_2025-08-06_18-48-00/model/q_network.pth
+Model saved to /home/nishrao/Projects/HJ_avoid/logs/safedqn_cartpole_2025-08-06_19-37-01/model/q_network.pth
+/home/nishrao/ENTER/envs/safe/lib/python3.10/site-packages/gymnasium/wrappers/rendering.py:296: UserWarning: [33mWARN: Overwriting existing videos at /home/nishrao/Projects/HJ_avoid/logs/safedqn_cartpole_2025-08-06_19-37-01/videos folder (try specifying a different `video_folder` for the `RecordVideo` wrapper if this is not desired)[0m
+  logger.warn(
+Evaluating the model for 10 episodes...
+Episode 1/10 - Reward: 879.0
+Episode 2/10 - Reward: 492.0
+Episode 3/10 - Reward: 2000.0
+Episode 4/10 - Reward: 2000.0
+Episode 5/10 - Reward: 2000.0
+Episode 6/10 - Reward: 2000.0
+Episode 7/10 - Reward: 1540.0
+Episode 8/10 - Reward: 2000.0
+Episode 9/10 - Reward: 287.0
+Episode 10/10 - Reward: 531.0
+Average Reward over 10 episodes: 1372.9

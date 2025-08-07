@@ -1,0 +1,4 @@
+Loaded pre-trained model from /home/nishrao/Projects/HJ_avoid/logs/safedqn_cartpole_2025-08-06_18-48-00/model/q_network.pth
+Model saved to /home/nishrao/Projects/HJ_avoid/logs/safedqn_cartpole_2025-08-07_08-53-12/model/q_network.pth
+[33mManual mode is enabled![0m
+You can now interact with the environment manually.
