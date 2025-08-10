@@ -9,13 +9,13 @@ import numpy as np
 import safety_envs.envs
 import gymnasium as gym
 from pathlib import Path
-from safety_filters.safe_dqn import SafeDQN
+from safety_filters.safe_sac_discrete import SafeSACDiscrete
 
 scripts_dir = Path(os.path.dirname(os.path.abspath(__file__)))
 project_dir = scripts_dir.parent
 config_dir = project_dir / "config"
 
-with open(config_dir / "config_safedqn_cartpole.yaml", "r") as file:
+with open(config_dir / "config_sac_cartpole.yaml", "r") as file:
     config = yaml.safe_load(file)
 
 logs_dir = project_dir / "logs"
@@ -51,13 +51,15 @@ torch.manual_seed(config["seed"])
 torch.backends.cudnn.deterministic = config["torch_deterministic"]
 device = torch.device("cuda" if torch.cuda.is_available() and config["cuda"] else "cpu")
 
+#env = gym.make(config["env_id"])
 env = gym.make(config["env_id"], safety_filter_args=config.get("safety_filter_args", None), eval_mode=True)
 env = gym.wrappers.RecordEpisodeStatistics(env)
 env.action_space.seed(config["seed"])
 
-model = SafeDQN(
+model = SafeSACDiscrete(
     env=env,
-    learning_rate=config["learning_rate"],
+    q_learning_rate=float(config["q_learning_rate"]),
+    policy_learning_rate=float(config["policy_learning_rate"]),
     buffer_size=config["buffer_size"],
     learning_starts=config["learning_starts"],
     batch_size=config["batch_size"],
@@ -65,9 +67,9 @@ model = SafeDQN(
     gamma=config["gamma"],
     train_frequency=config["train_frequency"],
     target_network_frequency=config["target_network_frequency"],
-    exploration_fraction=config["exploration_fraction"],
-    exploration_start_eps=config["eps_start"],
-    exploration_end_eps=config["eps_end"],
+    alpha=config["alpha"],
+    autotune_alpha=config["autotune_alpha"],
+    target_entropy_scale=config["target_entropy_scale"],
     wandb_log=f"runs/{run.id}",
     device=device,
     safety_filter_args=config.get("safety_filter_args", None),
@@ -77,22 +79,41 @@ if config["train_model"]:
     model.learn(total_timesteps=config["total_timesteps"])
 else:
     model_path = Path(config["eval_model_path"])
+    model_path_q1 = model_path / "q1_network.pth"
+    model_path_q2 = model_path / "q2_network.pth"
+    model_path_target_q1 = model_path / "target_q1_network.pth"
+    model_path_target_q2 = model_path / "target_q2_network.pth"
+    model_path_actor = model_path / "actor_network.pth"
     if model_path.exists():
-        model.q_network.load_state_dict(torch.load(model_path, map_location=model.device))
-        model.target_network.load_state_dict(model.q_network.state_dict())
-        model.target_network.eval()  # Set the target network to evaluation mode
+        model.q_network_1.load_state_dict(torch.load(model_path_q1, map_location=model.device))
+        model.q_network_2.load_state_dict(torch.load(model_path_q2, map_location=model.device))
+        model.target_q_network_1.load_state_dict(torch.load(model_path_target_q1, map_location=model.device))
+        model.target_q_network_2.load_state_dict(torch.load(model_path_target_q2, map_location=model.device))
+        model.actor.load_state_dict(torch.load(model_path_actor, map_location=model.device))
+        
+        model.target_q_network_1.eval()
+        model.target_q_network_2.eval()  # Set the target network to evaluation mode
+        model.actor.eval()
         print(f"Loaded pre-trained model from {model_path}")
     else:
         print("No pre-trained model found. Starting with a fresh model.")
         model.learn(total_timesteps=config["total_timesteps"])
 
 model_dir = run_dir / "model"
-model_path = model_dir / "q_network.pth"
+model_path_q1 = model_dir / "q1_network.pth"
+model_path_q2 = model_dir / "q2_network.pth"
+model_path_target_q1 = model_dir / "target_q1_network.pth"
+model_path_target_q2 = model_dir / "target_q2_network.pth"
+model_path_actor = model_dir / "actor_network.pth"
 os.makedirs(model_dir, exist_ok=True)
-torch.save(model.q_network.state_dict(), model_path)
-print(f"Model saved to {model_path}")
+torch.save(model.q_network_1.state_dict(), model_path_q1)
+torch.save(model.q_network_2.state_dict(), model_path_q2)
+torch.save(model.target_q_network_1.state_dict(), model_path_target_q1)
+torch.save(model.target_q_network_2.state_dict(), model_path_target_q2)
+torch.save(model.actor.state_dict(), model_path_actor)
+print(f"Model saved to {model_dir}")
 
-if not config["manual_mode"]:
+if config["eval_model"] and not config["manual_mode"]:
     
     video_path = run_dir / "videos"
     os.makedirs(video_path, exist_ok=True)
@@ -102,7 +123,8 @@ if not config["manual_mode"]:
     total_reward = 0
     num_episodes = 10
     print(f"Evaluating the model for {num_episodes} episodes...")
-    model.target_network.eval()  # Set the target network to evaluation mode
+    model.target_q_network_1.eval()  # Set the target network to evaluation mode
+    model.target_q_network_1.eval()
     for episode in range(num_episodes):
         obs, _ = eval_env.reset()
         done = False
@@ -112,7 +134,7 @@ if not config["manual_mode"]:
             obs_tensor = torch.tensor(obs, dtype=torch.float32, device=model.device).unsqueeze(0)
             #rand_action = eval_env.action_space.sample() if random.random() < 0.75 else None
             
-            rand_action = eval_env.action_space.sample()
+            #rand_action = eval_env.action_space.sample()
             #rand_action = 0
             
             # abcd = model._consult_safety_filter(obs_tensor, task_action=rand_action, use_qcbf=True)
@@ -124,9 +146,10 @@ if not config["manual_mode"]:
             #     # Safety filter policy
             #     action = model._predict_action(epsilon=0.0, observation=obs)
             #     eval_env.unwrapped.safety_filter_in_use = True
-            action, filter_in_use = model._consult_safety_filter(obs_tensor, task_action=rand_action, use_qcbf=True)
-            eval_env.unwrapped.safety_filter_in_use = filter_in_use
-            obs, reward, terminated, truncated, info = eval_env.step(action)
+            #action, filter_in_use = model._consult_safety_filter(obs_tensor, task_action=rand_action, use_qcbf=True)
+            #eval_env.unwrapped.safety_filter_in_use = filter_in_use
+            action, _, _ = model.actor.get_actions(obs_tensor)
+            obs, reward, terminated, truncated, info = eval_env.step(action.item())
             #done = terminated or truncated
             eps_step += 1
             done = terminated or eps_step >= 2000
@@ -138,15 +161,12 @@ if not config["manual_mode"]:
     print(f"Average Reward over {num_episodes} episodes: {avg_reward}")
     wandb.log({"avg_statistics/average_reward": avg_reward},)
 
-
     for i, video_name in enumerate(video_path.glob("*.mp4")):
         wandb.log({"Viz/video": wandb.Video(str(video_name), format="mp4")})
-
-    run.finish()
+        
     eval_env.close()
-    env.close()
     
-else:
+elif config["eval_model"] and config["manual_mode"]:
     
     eval_env = gym.make(config["env_id"], safety_filter_args=config.get("safety_filter_args", None), render_mode="human")
     
@@ -198,6 +218,7 @@ else:
     finally:
         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
         
-        run.finish()
         eval_env.close()
-        env.close()
+        
+run.finish()
+env.close()

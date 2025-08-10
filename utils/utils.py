@@ -8,7 +8,9 @@ import torch.nn as nn
 import gymnasium as gym
 from pathlib import Path
 import torch.optim as optim
+import torch.nn.functional as F
 from collections import namedtuple
+from torch.distributions.categorical import Categorical
 from typing import Union, Tuple, Dict, Optional, List, Any, NamedTuple
 
 class ReplayBufferSample(NamedTuple):
@@ -33,7 +35,7 @@ class ReplayBuffer:
         self.action_space = action_space
         self.device = torch.device(device)
         self.obs_shape = observation_space.shape
-        self.action_dim = action_space.n
+        self.action_dim = action_space.shape[0] if isinstance(action_space, gym.spaces.Box) else 1
         self.pos = 0
         self.full = False
         
@@ -102,20 +104,36 @@ class ReplayBuffer:
         
         return torch.tensor(array, device=self.device, )
     
+
+def _layer_init(
+    layer: nn.Module,
+    bias_constant: float = 0.0,
+    kaiming: bool = True,
+) -> nn.Module:
+    
+    if kaiming:
+        nn.init.kaiming_uniform_(layer.weight,)
+        torch.nn.init.constant_(layer.bias, bias_constant)
+        
+    return layer
     
 class QNetwork(nn.Module):
     
     def __init__(self,
                  env: gym.Env,
+                 hidden_dim: int = 256,
+                 kaiming: bool = True,
+                 activation_fn: nn.Module = nn.LeakyReLU,
                 ) -> None:
         
         super().__init__()
+
         self.network = nn.Sequential(
-            nn.Linear(np.array(env.observation_space.shape).prod(), 128),
-            nn.LeakyReLU(),
-            nn.Linear(128, 128),
-            nn.LeakyReLU(),
-            nn.Linear(128, env.action_space.n),
+            _layer_init(nn.Linear(np.array(env.observation_space.shape).prod(), hidden_dim), kaiming=kaiming),
+            activation_fn(),
+            _layer_init(nn.Linear(hidden_dim, hidden_dim), kaiming=kaiming),
+            activation_fn(),
+            _layer_init(nn.Linear(hidden_dim, env.action_space.n), kaiming=kaiming),
         )
         
     def forward(self, 
@@ -123,7 +141,47 @@ class QNetwork(nn.Module):
                 ) -> torch.Tensor:
         
         return self.network(x.float())
+
+
+class ActorNetworkDiscrete(nn.Module):
+
+    def __init__(self, 
+               env: gym.Env,
+               hidden_dim: int = 256,
+               kaiming: bool = True,
+               activation_fn: nn.Module = nn.LeakyReLU,
+              ) -> None:
+        
+        super().__init__()
+        self.network = nn.Sequential(
+            _layer_init(nn.Linear(np.array(env.observation_space.shape).prod(), hidden_dim), kaiming=kaiming),
+            activation_fn(),
+            _layer_init(nn.Linear(hidden_dim, hidden_dim), kaiming),
+            activation_fn(),
+            _layer_init(nn.Linear(hidden_dim, 512), kaiming=kaiming),
+            activation_fn(),
+            _layer_init(nn.Linear(512, env.action_space.n), kaiming=kaiming))
+        
+    def forward(self, 
+                x: torch.Tensor,
+               ) -> torch.Tensor:
+        
+        # Logits for the action probabilities
+        return self.network(x.float())
     
+    def get_actions(self, 
+                    x: torch.Tensor,
+                   ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        
+        logits = self(x)
+        policy_dist = Categorical(logits=logits)
+        action = policy_dist.sample()
+        
+        action_probs = policy_dist.probs
+        log_probs = F.log_softmax(logits, dim=-1)
+        
+        return action, log_probs, action_probs
+        
 
 def linear_schedule(eps_start: float, 
                     eps_end: float, 

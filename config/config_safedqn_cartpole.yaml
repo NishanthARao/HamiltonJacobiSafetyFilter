@@ -17,10 +17,10 @@ eps_end: 0.05
 exploration_fraction: 0.5
 learning_starts: 10_000
 train_frequency: 10
-train_model: False
-#eval_model_path: None
-eval_model_path: "/home/nishrao/Projects/HJ_avoid/logs/safedqn_cartpole_2025-08-06_18-48-00/model/q_network.pth"
-manual_mode: True
+train_model: True
+eval_model_path: None
+#eval_model_path: "/home/nishrao/Projects/HJ_avoid/logs/safedqn_cartpole_2025-08-06_18-48-00/model/q_network.pth"
+manual_mode: False
 safety_filter_args:
   USE_SAFETY_FILTER: True
   GAMMA_START: 0.85

@@ -104,7 +104,7 @@ class SafeDQN:
                 td_target = data.rewards.flatten() + (1 - data.dones.flatten()) * self.gamma * target_max
         
         old_val = self.q_network(data.observations).gather(1, data.actions).squeeze()
-        loss = F.mse_loss(old_val, td_target.unsqueeze(1))
+        loss = F.mse_loss(old_val, td_target)
         
         if global_step % 100 == 0:
             wandb.log({
