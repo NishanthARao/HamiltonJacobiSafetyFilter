@@ -1,2 +1,3 @@
 
 from safety_envs.envs.safe_cartpole import SafeCartPoleEnv
+from safety_envs.envs.safe_inverted_pendulum import SafeInvertedPendulumEnv

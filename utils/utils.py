@@ -108,7 +108,7 @@ class ReplayBuffer:
 def _layer_init(
     layer: nn.Module,
     bias_constant: float = 0.0,
-    kaiming: bool = True,
+    kaiming: bool = False,
 ) -> nn.Module:
     
     if kaiming:
@@ -181,8 +181,104 @@ class ActorNetworkDiscrete(nn.Module):
         log_probs = F.log_softmax(logits, dim=-1)
         
         return action, log_probs, action_probs
-        
+    
+            
+class SoftQNetwork(nn.Module): 
 
+    def __init__(self, 
+                 env: gym.Env,
+                 hidden_dim: int = 256,
+                 kaiming: bool = False,
+                 activation_fn: nn.Module = nn.LeakyReLU,
+                ) -> None:
+        
+        super().__init__()
+
+        self.network = nn.Sequential(
+            _layer_init(nn.Linear((np.array((env.observation_space.shape)).prod() + env.action_space.shape).item(), hidden_dim), kaiming=kaiming),
+            activation_fn(),
+            _layer_init(nn.Linear(hidden_dim, hidden_dim), kaiming=kaiming),
+            activation_fn(),
+            _layer_init(nn.Linear(hidden_dim, 1), kaiming=kaiming),
+        )
+        
+    def forward(self, 
+                x: torch.Tensor,
+                action: torch.Tensor,
+               ) -> torch.Tensor:
+        
+        x = torch.cat([x, action], dim=1)
+        return self.network(x.float())
+
+
+class ActorNetworkContinuous(nn.Module):
+    
+    def __init__(self, 
+                 env: gym.Env,
+                 hidden_dim: int = 256,
+                 kaiming: bool = False,
+                 activation_fn: nn.Module = nn.LeakyReLU,
+                ) -> None:
+        
+        super().__init__()
+
+        self.fc1 = _layer_init(nn.Linear(np.array(env.observation_space.shape).prod().item(), hidden_dim), kaiming=kaiming)
+        self.fc2 = _layer_init(nn.Linear(hidden_dim, hidden_dim), kaiming=kaiming)
+        self.fc_mean = _layer_init(nn.Linear(hidden_dim, np.prod(env.action_space.shape)), kaiming=kaiming)
+        self.fc_log_std = _layer_init(nn.Linear(hidden_dim, np.prod(env.action_space.shape)), kaiming=kaiming)
+        self.activation_fn = activation_fn()
+        
+        self.register_buffer(
+            "action_scale",
+            torch.tensor(
+                (env.action_space.high - env.action_space.low) / 2.0,
+                dtype=torch.float32,)
+        )
+        
+        self.register_buffer(
+            "action_bias",
+            torch.tensor(
+                (env.action_space.high + env.action_space.low) / 2.0,
+                dtype=torch.float32,
+            )
+        )
+        
+        self.LOG_STD_MIN = -5.0
+        self.LOG_STD_MAX = 2.0
+        
+    def forward(self, 
+                x: torch.Tensor,
+               ) -> Tuple[torch.Tensor, torch.Tensor]:
+        
+        x = self.activation_fn(self.fc1(x.float()))
+        x = self.activation_fn(self.fc2(x))
+        
+        mean = self.fc_mean(x)
+        log_std = torch.tanh(self.fc_log_std(x))
+        log_std = self.LOG_STD_MIN + 0.5 * (self.LOG_STD_MAX - self.LOG_STD_MIN) * (log_std + 1.0)
+        
+        return mean, log_std
+    
+    def get_actions(self, 
+                    x: torch.Tensor,
+                   ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        
+        EPS = 1e-6
+        
+        mean, log_std = self(x)
+        std = log_std.exp()
+        
+        normal = torch.distributions.Normal(mean, std)
+        x_t = normal.rsample()  
+        y_t = torch.tanh(x_t)
+        action = y_t * self.action_scale + self.action_bias
+        log_prob = normal.log_prob(x_t) - torch.log(self.action_scale * (1 - y_t.pow(2)) + EPS)
+        log_prob = log_prob.sum(dim=-1, keepdim=True)
+        mean = torch.tanh(mean) * self.action_scale + self.action_bias
+        
+        return action, log_prob, mean
+    
+    
 def linear_schedule(eps_start: float, 
                     eps_end: float, 
                     duration: int,

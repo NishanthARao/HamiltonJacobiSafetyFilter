@@ -95,7 +95,7 @@ class SafeDQN:
             if self.enable_safety_filter:
                 l_values = data.l_values.flatten()
                 future_safety_val = torch.min(l_values, target_max)
-                td_target = (1 - self.gamma) * l_values + self.gamma * future_safety_val
+                td_target = (1 - self.gamma) * l_values + (1 - data.dones.flatten()) * self.gamma * future_safety_val
                 
                 # Anneal gamma
                 fraction = min(1.0, global_step / self.gamma_anneal_steps)
