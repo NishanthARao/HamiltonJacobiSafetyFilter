@@ -152,10 +152,8 @@ class SafeCartPoleEnv(gym.Env):
         if self.safe_margin_values is None:
             # Default safe margin values
             self.safe_margin_values = {
-                "pos": 2.0,                     # Safe margin for cart position
-                "theta": 10 * (math.pi / 180),  # Safe margin for pole angle
-                "vel": 1.0,                     # Safe margin for cart velocity
-                "om": 0.1,                      # Safe margin for pole angular velocity
+                "pos": 2.0,    # Safe margin for cart position
+                "theta": 0.2,  # Safe margin for pole angle
             }
         self.safety_filter_in_use = False
         #########################################
@@ -176,8 +174,6 @@ class SafeCartPoleEnv(gym.Env):
         # Calculate the safety function values
         l_pos = (self.safe_margin_values["pos"] - np.abs(x)) / self.safe_margin_values["pos"]
         l_theta = (self.safe_margin_values["theta"] - np.abs(theta)) / self.safe_margin_values["theta"]
-        l_vel = (self.safe_margin_values["vel"] - np.abs(vel)) / self.safe_margin_values["vel"]
-        l_om = (self.safe_margin_values["om"] - np.abs(om)) / self.safe_margin_values["om"]
         
         # Fallback policy should also bring the cart pole "towards" the safe set
 
@@ -189,7 +185,7 @@ class SafeCartPoleEnv(gym.Env):
         
         # Combine the safety function values
         # Calculate minimum value
-        l_value = min(l_pos, l_theta, l_vel, l_om)
+        l_value = min(l_pos, l_theta)
         
         return l_value
     
@@ -206,16 +202,12 @@ class SafeCartPoleEnv(gym.Env):
         # Generate random state near the boundaries of the safe set
         X_1 = self.safe_margin_values["pos"] - 0.4
         X_2 = self.safe_margin_values["pos"] - 1.0
-        THETA_1 = self.safe_margin_values["theta"] - 0.02
-        THETA_2 = self.safe_margin_values["theta"] - 0.05
-        VEL_1 = self.safe_margin_values["vel"] - 0.4
-        VEL_2 = self.safe_margin_values["vel"] - 0.8
-        OM_1 = self.safe_margin_values["om"] - 0.4
-        OM_2 = self.safe_margin_values["om"] - 0.8
+        THETA_1 = self.safe_margin_values["theta"] - 0.1
+        THETA_2 = self.safe_margin_values["theta"] - 0.15
         
-        assert X_2 > 0 and THETA_2 > 0 and VEL_2 > 0 and OM_2 > 0, \
+        assert X_2 > 0 and THETA_2 > 0, \
             "absolute value of lower bounds are negative, try to keep them closer to the margin values"
-        assert X_1 > X_2 and THETA_1 > THETA_2 and VEL_1 > VEL_2 and OM_1 > OM_2, \
+        assert X_1 > X_2 and THETA_1 > THETA_2, \
             "lower bounds are greater than upper bounds!"
 
         # For (prob_near_boundary * 100)% of the time, generate a state near the boundaries of the safe set
@@ -224,9 +216,9 @@ class SafeCartPoleEnv(gym.Env):
         coin_flip = self.np_random.uniform(0, 1) < 0.5
         
         random_x = (self.np_random.uniform(low=-X_1, high=-X_2) if coin_flip else self.np_random.uniform(low=X_2, high=X_1)) if is_near_boundaries else self.np_random.uniform(low=-X_2, high=X_2)
-        random_vel = (self.np_random.uniform(low=-VEL_1, high=-VEL_2) if coin_flip else self.np_random.uniform(low=VEL_2, high=VEL_1)) if is_near_boundaries else self.np_random.uniform(low=-VEL_2, high=VEL_2)
+        random_vel = self.np_random.uniform(low=-0.05, high=0.05) 
         random_theta = (self.np_random.uniform(low=-THETA_1, high=-THETA_2) if coin_flip else self.np_random.uniform(low=THETA_2, high=THETA_1)) if is_near_boundaries else self.np_random.uniform(low=-THETA_2, high=THETA_2)
-        random_om = (self.np_random.uniform(low=-OM_1, high=-OM_2) if coin_flip else self.np_random.uniform(low=OM_2, high= OM_1)) if is_near_boundaries else self.np_random.uniform(low=-OM_2, high=OM_2)
+        random_om = self.np_random.uniform(low=-0.05, high=0.05)
         
         # Stack the values to create the state
         random_state = np.array([random_x, random_vel, random_theta, random_om], dtype=np.float32)
@@ -338,7 +330,7 @@ class SafeCartPoleEnv(gym.Env):
         super().reset(seed=seed)
         ##################
         if self.use_safety_filter and not self.eval_mode:
-            self.state = self._generate_random_state(prob_near_boundary=0.05)
+            self.state = self._generate_random_state(prob_near_boundary=0.5)
         else:
             self.low, self.high = utils.maybe_parse_reset_bounds(
                 options, -0.05, 0.05  # default low
@@ -476,9 +468,7 @@ if __name__ == "__main__":
                               "USE_SAFETY_FILTER": True,
                               "SAFE_MARGIN_VALUES": {
                                   "pos": 2.0,
-                                  "theta": 10 * (math.pi / 180),
-                                  "vel": 1.0,
-                                  "om": 1.0,
+                                  "theta": 0.2,
                               }
                           })
     env.reset()

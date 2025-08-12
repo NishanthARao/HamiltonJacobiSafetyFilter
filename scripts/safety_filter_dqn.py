@@ -143,7 +143,6 @@ if not config["manual_mode"]:
         wandb.log({"Viz/video": wandb.Video(str(video_name), format="mp4")})
 
     run.finish()
-    eval_env.close()
     env.close()
     
 else:
@@ -198,6 +197,6 @@ else:
     finally:
         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
         
-        run.finish()
-        eval_env.close()
-        env.close()
+run.finish()
+#eval_env.close()
+env.close()

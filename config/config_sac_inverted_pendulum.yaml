@@ -21,28 +21,3 @@ train_frequency: 1
 eval_model: True
 train_model: True
 manual_mode: False
-
-## Discrete SAC Configuration to try!
-# exp_name: "sac_inverted_pendulum"
-# seed: 1
-# torch_deterministic: True
-# cuda: False
-# wandb_project_name: safe_sac_continuous_filter
-# wandb_entity: None
-# env_id: "InvertedPendulum-v5"
-# total_timesteps: 500_000
-# q_learning_rate: 3e-4
-# policy_learning_rate: 3e-4
-# buffer_size: 1_000_000
-# gamma: 0.99
-# tau: 1.0
-# policy_update_frequency: 2
-# target_network_frequency: 500
-# batch_size: 256
-# alpha: 0.2
-# autotune_alpha: False
-# learning_starts: 20_000
-# train_frequency: 4
-# eval_model: True
-# train_model: True
-# manual_mode: False

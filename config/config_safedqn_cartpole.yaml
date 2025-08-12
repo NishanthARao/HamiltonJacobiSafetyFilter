@@ -30,6 +30,4 @@ safety_filter_args:
   QCBF_SAFETY_FILTER_EPSILON: 0.99
   SAFE_MARGIN_VALUES:
     pos: 2.0
-    theta: 0.174533
-    vel: 1.0
-    om: 1.0
+    theta: 0.2
