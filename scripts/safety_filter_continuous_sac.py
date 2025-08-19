@@ -153,7 +153,7 @@ if config["eval_model"] and not config["manual_mode"]:
             #     # Safety filter policy
             #     action = model._predict_action(epsilon=0.0, observation=obs)
             #     eval_env.unwrapped.safety_filter_in_use = True
-            action, filter_in_use = model.consult_safety_filter(obs_tensor, task_action=rand_action, use_lrsf=True)
+            action, filter_in_use = model.consult_safety_filter(obs_tensor, task_action=rand_action, use_qcbf=True)
             safety_filer_interventions += filter_in_use
             eval_env.unwrapped.safety_filter_in_use = filter_in_use
             #action, _, _ = model.actor.get_actions(obs_tensor)
@@ -224,7 +224,7 @@ elif config["eval_model"] and config["manual_mode"]:
 
                 obs_tensor = torch.tensor(obs, dtype=torch.float32, device=model.device).unsqueeze(0)
 
-                action, filter_in_use = model.consult_safety_filter(obs_tensor, task_action=manual_action, use_lrsf=True)
+                action, filter_in_use = model.consult_safety_filter(obs_tensor, task_action=manual_action, use_qcbf=True)
                 eval_env.unwrapped.safety_filter_in_use = filter_in_use
                 obs, reward, terminated, truncated, info = eval_env.step(action.detach().view(-1).numpy())
                 #print(terminated, info)
