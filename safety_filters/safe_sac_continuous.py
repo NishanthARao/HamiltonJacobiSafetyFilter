@@ -32,6 +32,7 @@ class SafeSACContinuous:
                  wandb_log: Optional[str] = None,
                  device: str = "cpu",
                  safety_filter_args: Optional[Dict] = {},
+                 dont_log: Optional[bool] = True,
                  ) -> None:
         
         self.env = env
@@ -49,6 +50,7 @@ class SafeSACContinuous:
         self.alpha = alpha
         self.autotune_alpha = autotune_alpha
         self.wandb_log = wandb_log
+        self.dont_log = dont_log
         self.device = torch.device(device)
 
         self.actor = ActorNetworkContinuous(self.env).to(self.device)
@@ -162,7 +164,7 @@ class SafeSACContinuous:
                     self.alpha_optimizer.step()
                     self.alpha = self.log_alpha.exp().item()
             
-        if global_step % 100 == 0:
+        if global_step % 100 == 0 and not self.dont_log:
             
             wandb.log({
                 "losses/q1_mean_values": q1_a_values.mean().item(),
@@ -210,6 +212,9 @@ class SafeSACContinuous:
         observation = torch.tensor(observation, dtype=torch.float32, device=self.device).unsqueeze(0) if isinstance(observation, np.ndarray) else observation
         task_action = torch.tensor(task_action, dtype=torch.float32, device=self.device).unsqueeze(0) if isinstance(task_action, np.ndarray) else task_action
         
+        if task_action is None:
+                return self.actor.get_actions(observation)[0], True
+        
         if use_lrsf:
             
             # To estimate the safety value function
@@ -253,9 +258,6 @@ class SafeSACContinuous:
             print("\033[33mWarning: No safety filter is used. Returning task action as is.\033[0m")
             return task_action, False
             
-            
-            
-                
     def learn(self,
               total_timesteps: int,
               seed: Optional[int] = None,
@@ -272,7 +274,7 @@ class SafeSACContinuous:
                 
             next_obs, reward, terminated, truncated, info = self.env.step(action)
             
-            if info and "episode" in info:
+            if info and "episode" in info and not self.dont_log:
                 wandb.log({
                     "charts/episode_reward": info["episode"]["r"],
                     "charts/episode_length": info["episode"]["l"],

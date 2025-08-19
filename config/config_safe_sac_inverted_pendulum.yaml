@@ -1,6 +1,7 @@
 exp_name: "sac_inverted_pendulum"
 seed: 1
 torch_deterministic: True
+dont_log: False
 cuda: False
 wandb_project_name: safe_sac_continuous_filter
 wandb_entity: None
@@ -20,9 +21,10 @@ autotune_alpha: True
 learning_starts: 50_000
 train_frequency: 1
 eval_model: True
-eval_model_path: "/home/nishrao/Projects/HJ_avoid/logs/sac_inverted_pendulum_2025-08-19_10-06-04/model"
+eval_model_path: "/home/jarvis/safe_robotics_lab/Projects/HamiltonJacobiSafetyFilter/logs/sac_inverted_pendulum_2025-08-19_16-09-43/model"
+#eval_model_path: False
 train_model: False
-manual_mode: False
+manual_mode: True
 reset_noise_scale: 0.1
 safety_filter_args:
   PROB_NEAR_BOUNDARY: 1.0
@@ -31,7 +33,7 @@ safety_filter_args:
   GAMMA_END: 0.99
   GAMMA_ANNEAL_STEPS: 250_000
   LRSF_SAFETY_FILTER_EPSILON: 0.59
-  QCBF_SAFETY_FILTER_EPSILON: 0.97
+  QCBF_SAFETY_FILTER_EPSILON: 0.965
   SAFE_MARGIN_VALUES:
     pos: 2.4
     theta: 0.2
