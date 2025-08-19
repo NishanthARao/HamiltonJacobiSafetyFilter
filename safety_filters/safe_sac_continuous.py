@@ -18,6 +18,7 @@ class SafeSACContinuous:
                  env: gym.Env,
                  q_learning_rate: float = 3e-4,
                  policy_learning_rate: float = 1e-3,
+                 alpha_learning_rate: Optional[float] = None,
                  buffer_size: int = int(1e6),
                  learning_starts: int = int(5e3),
                  batch_size: int = 256,
@@ -36,6 +37,7 @@ class SafeSACContinuous:
         self.env = env
         self.q_learning_rate = q_learning_rate
         self.policy_learning_rate = policy_learning_rate
+        self.alpha_learning_rate = alpha_learning_rate if alpha_learning_rate is not None else q_learning_rate * 0.1
         self.buffer_size = buffer_size
         self.learning_starts = learning_starts
         self.batch_size = batch_size
@@ -70,7 +72,7 @@ class SafeSACContinuous:
             self.target_entropy = -torch.prod(torch.Tensor(self.env.action_space.shape).to(self.device)).item() 
             self.log_alpha = torch.zeros(1, requires_grad=True, device=self.device)
             self.alpha = self.log_alpha.exp().item()
-            self.alpha_optimizer = optim.Adam([self.log_alpha], lr=q_learning_rate)
+            self.alpha_optimizer = optim.Adam([self.log_alpha], lr=self.alpha_learning_rate)
         
         self.replay_buffer = ReplayBuffer(
             buffer_size=self.buffer_size,
@@ -189,6 +191,70 @@ class SafeSACContinuous:
                 target_network_param.data.copy_(
                     target_network_param.data * (1.0 - self.tau) + q_network_param.data * self.tau
                 )
+    
+    def consult_safety_filter(self,
+                              observation: Union[np.ndarray, torch.Tensor],
+                              task_action: Union[np.ndarray, torch.Tensor],
+                              use_lrsf: bool = False,
+                              use_qcbf: bool = False,
+                             ) -> Tuple[torch.Tensor, torch.Tensor]:
+        
+        # Value here is computed from Q(s, a) as:
+        # E_{a∼π(a∣s)}​[Q(s,a)−αlogπ(a∣s)]
+        # =>  approx_V = min(Q1(s, a), Q2(s, a)) − alpha * log_prob
+        # But if \alpha -> 0 during training, then, approx_V = min(Q1(s, a), Q2(s, a))
+        
+        self.target_q_network_1.eval()
+        self.target_q_network_2.eval()
+        
+        observation = torch.tensor(observation, dtype=torch.float32, device=self.device).unsqueeze(0) if isinstance(observation, np.ndarray) else observation
+        task_action = torch.tensor(task_action, dtype=torch.float32, device=self.device).unsqueeze(0) if isinstance(task_action, np.ndarray) else task_action
+        
+        if use_lrsf:
+            
+            # To estimate the safety value function
+            _, _, mean_mu_s = self.actor.get_actions(observation)
+            q1_da_values = self.target_q_network_1(observation, mean_mu_s)
+            q2_da_values = self.target_q_network_2(observation, mean_mu_s)
+            safety_val = torch.min(q1_da_values, q2_da_values).item()
+            
+            EPS = self.safety_filter_args.get("LRSF_SAFETY_FILTER_EPSILON", None)
+            if EPS is None: raise ValueError("LRSF_SAFETY_FILTER_EPSILON must be provided if using LRSF!") 
+            if safety_val > EPS:
+                return task_action, False
+            else:
+                return self.actor.get_actions(observation)[0], True
+            
+        elif use_qcbf:
+            
+            QCBF_SAFETY_FILTER_EPSILON = self.safety_filter_args.get("QCBF_SAFETY_FILTER_EPSILON", None)
+            
+            if QCBF_SAFETY_FILTER_EPSILON is None: raise ValueError("QCBF_SAFETY_FILTER_EPSILON must be provided if using QCBF!")
+            
+            q1_ta_values = self.target_q_network_1(observation, task_action)
+            q2_ta_values = self.target_q_network_2(observation, task_action)
+            q_ta_value = torch.min(q1_ta_values, q2_ta_values).item()
+            
+            # To estimate the safety value function
+            _, _, mean_mu_s = self.actor.get_actions(observation)
+            q1_da_values = self.target_q_network_1(observation, mean_mu_s)
+            q2_da_values = self.target_q_network_2(observation, mean_mu_s)   
+            safety_val = torch.min(q1_da_values, q2_da_values).item()
+            
+            safety_threshold = QCBF_SAFETY_FILTER_EPSILON * safety_val
+            
+            if q_ta_value > safety_threshold:
+                return task_action, False
+            else:
+                return self.actor.get_actions(observation)[0], True
+            
+        else:
+            # If no safety filter is used, just return the task action
+            print("\033[33mWarning: No safety filter is used. Returning task action as is.\033[0m")
+            return task_action, False
+            
+            
+            
                 
     def learn(self,
               total_timesteps: int,
@@ -210,6 +276,7 @@ class SafeSACContinuous:
                 wandb.log({
                     "charts/episode_reward": info["episode"]["r"],
                     "charts/episode_length": info["episode"]["l"],
+                    "charts/terminated_because": info["terminated_because"],
                 }, step=global_step)
                 
             real_next_obs = next_obs.copy()

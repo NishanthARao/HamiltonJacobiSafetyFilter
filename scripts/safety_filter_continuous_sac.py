@@ -22,6 +22,8 @@ logs_dir = project_dir / "logs"
 run_foldername = config["exp_name"] + time.strftime("_%Y-%m-%d_%H-%M-%S")
 run_dir = logs_dir / run_foldername
 os.makedirs(run_dir, exist_ok=True)
+video_path = run_dir / "videos"
+os.makedirs(video_path, exist_ok=True)
 
 run = wandb.init(
     project=config["wandb_project_name"],
@@ -36,6 +38,7 @@ config["project_dir"] = str(project_dir)
 config["scripts_dir"] = str(scripts_dir)
 config["logs_dir"] = str(logs_dir)
 config["run_id"] = run.id
+config["video_path"] = str(video_path)
 
 # Save the config to a YAML file in the run directory
 with open(run_dir / "config.yaml", "w") as file:
@@ -52,7 +55,7 @@ torch.backends.cudnn.deterministic = config["torch_deterministic"]
 device = torch.device("cuda" if torch.cuda.is_available() and config["cuda"] else "cpu")
 
 #env = gym.make(config["env_id"])
-env = gym.make(config["env_id"], safety_filter_args=config.get("safety_filter_args", None), eval_mode=True)
+env = gym.make(config["env_id"], safety_filter_args=config.get("safety_filter_args", None), reset_noise_scale=config.get("reset_noise_scale", 0.1),) 
 env = gym.wrappers.RecordEpisodeStatistics(env)
 env.action_space.seed(config["seed"])
 
@@ -60,6 +63,7 @@ model = SafeSACContinuous(
     env=env,
     q_learning_rate=float(config["q_learning_rate"]),
     policy_learning_rate=float(config["policy_learning_rate"]),
+    alpha_learning_rate=float(config.get("alpha_learning_rate", None)),
     buffer_size=config["buffer_size"],
     learning_starts=config["learning_starts"],
     batch_size=config["batch_size"],
@@ -115,9 +119,7 @@ print(f"Model saved to {model_dir}")
 
 if config["eval_model"] and not config["manual_mode"]:
     
-    video_path = run_dir / "videos"
-    os.makedirs(video_path, exist_ok=True)
-    eval_env = gym.make(config["env_id"], safety_filter_args=config.get("safety_filter_args", None), eval_mode = True, render_mode="rgb_array")
+    eval_env = gym.make(config["env_id"], safety_filter_args=config.get("safety_filter_args", None), eval_mode = True, render_mode="rgb_array", reset_noise_scale=config.get("reset_noise_scale", 0.1),)
     #eval_env = gym.make(config["env_id"], render_mode="rgb_array")
     eval_env = gym.wrappers.RecordVideo(eval_env, video_path, episode_trigger=lambda x: True)
 
@@ -131,11 +133,13 @@ if config["eval_model"] and not config["manual_mode"]:
         done = False
         epsisode_reward = 0
         eps_step = 0
+        safety_filer_interventions = 0
         while not done:
             obs_tensor = torch.tensor(obs, dtype=torch.float32, device=model.device).unsqueeze(0)
             #rand_action = eval_env.action_space.sample() if random.random() < 0.75 else None
             
             #rand_action = eval_env.action_space.sample()
+            rand_action = np.random.uniform(-1, 1, size=(1,))
             #rand_action = 0
             
             # abcd = model._consult_safety_filter(obs_tensor, task_action=rand_action, use_qcbf=True)
@@ -147,17 +151,19 @@ if config["eval_model"] and not config["manual_mode"]:
             #     # Safety filter policy
             #     action = model._predict_action(epsilon=0.0, observation=obs)
             #     eval_env.unwrapped.safety_filter_in_use = True
-            #action, filter_in_use = model._consult_safety_filter(obs_tensor, task_action=rand_action, use_qcbf=True)
-            #eval_env.unwrapped.safety_filter_in_use = filter_in_use
-            action, _, _ = model.actor.get_actions(obs_tensor)
+            action, filter_in_use = model.consult_safety_filter(obs_tensor, task_action=rand_action, use_qcbf=True)
+            safety_filer_interventions += filter_in_use
+            eval_env.unwrapped.safety_filter_in_use = filter_in_use
+            #action, _, _ = model.actor.get_actions(obs_tensor)
             obs, reward, terminated, truncated, info = eval_env.step(action.detach().view(-1))
             #done = terminated or truncated
             eps_step += 1
             done = terminated or eps_step >= 2000
             epsisode_reward += reward
         total_reward += epsisode_reward
-        print(f"Episode {episode + 1}/{num_episodes} - Reward: {epsisode_reward}")
+        print(f"Episode {episode + 1}/{num_episodes} - Reward: {epsisode_reward}, Safety Filter Interventions: {safety_filer_interventions}")
         wandb.log({"eval/episode_reward": epsisode_reward},)
+        wandb.log({"eval/safety_filter_interventions": safety_filer_interventions},)
     avg_reward = total_reward / num_episodes
     print(f"Average Reward over {num_episodes} episodes: {avg_reward}")
     wandb.log({"avg_statistics/average_reward": avg_reward},)
@@ -169,7 +175,7 @@ if config["eval_model"] and not config["manual_mode"]:
     
 elif config["eval_model"] and config["manual_mode"]:
     
-    eval_env = gym.make(config["env_id"], safety_filter_args=config.get("safety_filter_args", None), render_mode="human")
+    eval_env = gym.make(config["env_id"], safety_filter_args=config.get("safety_filter_args", None), render_mode="human", eval_mode=True)
     
     print("\033[33mManual mode is enabled!\033[0m")
     print("You can now interact with the environment manually.")

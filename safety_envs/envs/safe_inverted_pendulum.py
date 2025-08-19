@@ -6,7 +6,7 @@ from gymnasium import utils
 from gymnasium.envs.mujoco import MujocoEnv
 from gymnasium.spaces import Box
 
-from typing import Optional
+from typing import Optional, Tuple, Dict
 
 DEFAULT_CAMERA_CONFIG = {
     "trackbodyid": 0,
@@ -173,30 +173,38 @@ class SafeInvertedPendulumEnv(MujocoEnv, utils.EzPickle):
         if self.safe_margin_values is None:
             # Default safe margin values
             self.safe_margin_values = {
-                "pos": 2.0,    # Safe margin for cart position
+                "pos": 2.4,    # Safe margin for cart position
                 "theta": 0.2,  # Safe margin for pole angle
             }
         self.safety_filter_in_use = False
+        
+        self.terminated_because = {
+            "POS": 0,
+            "THETA": 0,
+        }
         #########################################
 
     def _calculate_l_value(self, 
                            state: np.ndarray,
-                           ) -> float:
+                           ) -> Tuple[float, int]:
+        
+        POS_GEQ_THETA = 1  # 1: POS, 2: THETA
         
         x, theta, _, _ = state
         
         l_pos = (self.safe_margin_values["pos"] - np.abs(x)) / self.safe_margin_values["pos"]
         l_theta = (self.safe_margin_values["theta"] - np.abs(theta)) / self.safe_margin_values["theta"]
 
+        if l_theta > l_pos: POS_GEQ_THETA = 2
         
-        return min(l_pos, l_theta)
+        return min(l_pos, l_theta), POS_GEQ_THETA
 
     def _generate_random_state(self,) -> np.ndarray:
         
         # Generate random state near the boundaries of the safe set
-        X_1 = self.safe_margin_values["pos"] - 0.4
-        X_2 = self.safe_margin_values["pos"] - 1.0
-        THETA_1 = self.safe_margin_values["theta"] - 0.1
+        X_1 = self.safe_margin_values["pos"] - 1.5
+        X_2 = self.safe_margin_values["pos"] - 2.3
+        THETA_1 = self.safe_margin_values["theta"] - 0.03
         THETA_2 = self.safe_margin_values["theta"] - 0.15
         
         assert X_2 > 0 and THETA_2 > 0, \
@@ -211,13 +219,11 @@ class SafeInvertedPendulumEnv(MujocoEnv, utils.EzPickle):
         
         random_x = (self.np_random.uniform(low=-X_1, high=-X_2) if coin_flip else self.np_random.uniform(low=X_2, high=X_1)) if is_near_boundaries else self.np_random.uniform(low=-X_2, high=X_2)
         random_theta = (self.np_random.uniform(low=-THETA_1, high=-THETA_2) if coin_flip else self.np_random.uniform(low=THETA_2, high=THETA_1)) if is_near_boundaries else self.np_random.uniform(low=-THETA_2, high=THETA_2)
-        
-        qvel = self.init_qvel + self.np_random.uniform(
-                size=self.model.nv, low=-self._reset_noise_scale, high=self._reset_noise_scale
-            )
+        random_vel = self.np_random.uniform(low=-0.5, high=0.5) if abs(random_x) < 0.5 else self.np_random.uniform(low=-self._reset_noise_scale, high=self._reset_noise_scale)
+        random_om = self.np_random.uniform(-self._reset_noise_scale, self._reset_noise_scale)
         
         # Stack the values to create the state
-        random_state = np.array([random_x, random_theta, qvel[0], qvel[1]], dtype=np.float32)
+        random_state = np.array([random_x, random_theta, random_vel, random_om], dtype=np.float32)
         return random_state
 
     def step(self, action):
@@ -229,11 +235,16 @@ class SafeInvertedPendulumEnv(MujocoEnv, utils.EzPickle):
 
         if self.use_safety_filter:
             # Calculate the l-value for the current state
-            l_value = self._calculate_l_value(observation)
+            l_value, POS_GEQ_THETA = self._calculate_l_value(observation)
             # If the l-value is less than 0, the state is unsafe
             terminated = bool(l_value < 0)
             
             info["l_value"] = l_value
+            
+            if POS_GEQ_THETA == 1 and terminated:
+                self.terminated_because["POS"] += 1
+            elif POS_GEQ_THETA == 2 and terminated:
+                self.terminated_because["THETA"] += 1
 
         else:
 
@@ -244,6 +255,7 @@ class SafeInvertedPendulumEnv(MujocoEnv, utils.EzPickle):
         reward = int(not terminated)
 
         info["reward_survive"] = reward
+        info["terminated_because"] = self.terminated_because if self.use_safety_filter else {}
 
         if self.render_mode == "human":
             self.render()
@@ -251,7 +263,7 @@ class SafeInvertedPendulumEnv(MujocoEnv, utils.EzPickle):
         return observation, reward, terminated, False, info
 
     def reset_model(self):
-        if self.use_safety_filter and not self.eval_mode:
+        if self.use_safety_filter:
             # Generate a random state near the boundaries of the safe set
             state = self._generate_random_state()
             self.set_state(state[:2], state[2:])
