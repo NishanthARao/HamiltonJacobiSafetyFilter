@@ -51,7 +51,6 @@ torch.manual_seed(config["seed"])
 torch.backends.cudnn.deterministic = config["torch_deterministic"]
 device = torch.device("cuda" if torch.cuda.is_available() and config["cuda"] else "cpu")
 
-#env = gym.make(config["env_id"])
 env = gym.make(config["env_id"], safety_filter_args=config.get("safety_filter_args", None))
 env = gym.wrappers.RecordEpisodeStatistics(env)
 env.action_space.seed(config["seed"])
@@ -132,25 +131,11 @@ if config["eval_model"] and not config["manual_mode"]:
         eps_step = 0
         while not done:
             obs_tensor = torch.tensor(obs, dtype=torch.float32, device=model.device).unsqueeze(0)
-            #rand_action = eval_env.action_space.sample() if random.random() < 0.75 else None
-            
-            #rand_action = eval_env.action_space.sample()
-            #rand_action = 0
-            
-            # abcd = model._consult_safety_filter(obs_tensor, task_action=rand_action, use_qcbf=True)
-            # if model.target_network(obs_tensor).max(1)[0].item() > config["safety_filter_args"]["SAFETY_FILTER_EPSILON"] and rand_action is not None:
-            #     # Task policy is random inputs to the model
-            #     action = eval_env.action_space.sample()
-            #     eval_env.unwrapped.safety_filter_in_use = False
-            # else:
-            #     # Safety filter policy
-            #     action = model._predict_action(epsilon=0.0, observation=obs)
-            #     eval_env.unwrapped.safety_filter_in_use = True
-            #action, filter_in_use = model._consult_safety_filter(obs_tensor, task_action=rand_action, use_qcbf=True)
-            #eval_env.unwrapped.safety_filter_in_use = filter_in_use
-            action, _, _ = model.actor.get_actions(obs_tensor)
+            rand_action = eval_env.action_space.sample()
+
+            action, filter_in_use = model._consult_safety_filter(obs_tensor, task_action=rand_action, use_lrsf=True)
+            eval_env.unwrapped.safety_filter_in_use = filter_in_use
             obs, reward, terminated, truncated, info = eval_env.step(action.item())
-            #done = terminated or truncated
             eps_step += 1
             done = terminated or eps_step >= 2000
             epsisode_reward += reward
@@ -185,39 +170,38 @@ elif config["eval_model"] and config["manual_mode"]:
         tty.setcbreak(sys.stdin.fileno())
         
         for i in range(100):
-            obs_array, _ = eval_env.reset()
+            obs, _ = eval_env.reset()
             while True:
             ## Keyboard inputs to control the agent
                 if isData():
                     key = sys.stdin.read(1)
-                    print(key)
-                    if key == 'a':
+                    print(f"Command: {key}", end="\r")
+                    if key == 'd':
                         manual_action = np.array([0,])
-                    elif key == 'd':
+                    elif key == 'a':
                         manual_action = np.array([1,])
                     elif key == 'q':
                         print("Exiting test mode.")
-                        break
+                        exit()
                     elif key == 'r':
                         print("Resetting environment.")
-                        obs_array, _ = eval.reset()
+                        obs, _ = eval_env.reset()
                     else:
                         print(f"Unknown command: {key}")
 
                 else:
                     manual_action = None
+                    
+                obs_tensor = torch.tensor(obs, dtype=torch.float32, device=model.device).unsqueeze(0)
 
-                action, filter_in_use = model._consult_safety_filter(obs_array, task_action=manual_action, use_qcbf=True)
+                action, filter_in_use = model._consult_safety_filter(obs_tensor, task_action=manual_action, use_qcbf=True)
                 eval_env.unwrapped.safety_filter_in_use = filter_in_use
-                obs, reward, terminated, truncated, info = eval_env.step(action)
-                #print(terminated, info)
+                obs, reward, terminated, truncated, info = eval_env.step(action.item())
                 if terminated: 
                     break
             
     finally:
         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
-        
-        eval_env.close()
         
 run.finish()
 env.close()

@@ -112,25 +112,11 @@ if not config["manual_mode"]:
         MAX_EPISODE_STEPS = 2000
         while not done:
             obs_tensor = torch.tensor(obs, dtype=torch.float32, device=model.device).unsqueeze(0)
-            #rand_action = eval_env.action_space.sample() if random.random() < 0.75 else None
-            
             rand_action = eval_env.action_space.sample()
-            #rand_action = 0
-            
-            # abcd = model._consult_safety_filter(obs_tensor, task_action=rand_action, use_qcbf=True)
-            # if model.target_network(obs_tensor).max(1)[0].item() > config["safety_filter_args"]["SAFETY_FILTER_EPSILON"] and rand_action is not None:
-            #     # Task policy is random inputs to the model
-            #     action = eval_env.action_space.sample()
-            #     eval_env.unwrapped.safety_filter_in_use = False
-            # else:
-            #     # Safety filter policy
-            #     action = model._predict_action(epsilon=0.0, observation=obs)
-            #     eval_env.unwrapped.safety_filter_in_use = True
             action, filter_in_use = model._consult_safety_filter(obs_tensor, task_action=rand_action, use_qcbf=True)
             safety_filter_interventions += filter_in_use
             eval_env.unwrapped.safety_filter_in_use = filter_in_use
             obs, reward, terminated, truncated, info = eval_env.step(action)
-            #done = terminated or truncated
             eps_step += 1
             done = terminated or eps_step >= MAX_EPISODE_STEPS
             epsisode_reward += reward
@@ -176,14 +162,14 @@ else:
             ## Keyboard inputs to control the agent
                 if isData():
                     key = sys.stdin.read(1)
-                    print(key, end="\r")
-                    if key == 'a':
+                    print(f"Command: {key}", end="\r")
+                    if key == 'd':
                         manual_action = np.array([0,])
-                    elif key == 'd':
+                    elif key == 'a':
                         manual_action = np.array([1,])
                     elif key == 'q':
                         print("Exiting test mode.")
-                        break
+                        exit()
                     elif key == 'r':
                         print("Resetting environment.")
                         obs_array, _ = eval_env.reset()

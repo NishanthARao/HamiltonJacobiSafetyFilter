@@ -195,7 +195,66 @@ class SafeSACDiscrete:
                 target_network_param.data.copy_(
                     target_network_param.data * (1.0 - self.tau) + q_network_param.data * self.tau
                 )
-                
+    
+    def _consult_safety_filter(self,
+                               observation: Union[np.ndarray, torch.Tensor],
+                               task_action: np.ndarray,
+                               use_lrsf: bool = False,
+                               use_qcbf: bool = True,
+                              ) -> Tuple[np.ndarray, bool]:
+        
+        # Value here is approx computed from Q(s, a) as:
+        # V (s) ~ π(s)^T[Q(s) − α log(π(s))]
+        # => approx_V = π(s)^T[ min(Q1(s), Q2(s)) ]
+        # since α -> 0 during training
+        
+        # Firstly, set the target network to eval mode
+        self.target_q_network_1.eval()
+        self.target_q_network_2.eval()
+        
+        observation = torch.tensor(observation, dtype=torch.float32, device=self.device).unsqueeze(0) if isinstance(observation, np.ndarray) else observation
+        task_action = torch.tensor([task_action.item()], dtype=torch.int64, device=self.device).unsqueeze(0) if isinstance(task_action, np.ndarray) or isinstance(task_action, np.int64) else task_action
+        
+        if task_action is None:
+            return self.actor.get_actions(observation)[0], True
+        
+        _, _, next_state_action_probs = self.actor.get_actions(observation)
+        q1_d_next_target = self.target_q_network_1(observation)
+        q2_d_next_target = self.target_q_network_2(observation)
+        
+        safety_val = (next_state_action_probs * torch.min(q1_d_next_target, q2_d_next_target) ).sum(dim=1)
+        
+        if use_lrsf:
+            # Use the Least-Restrictive Safety Filter (LRSF) approach
+            EPS = self.safety_filter_args.get("LRSF_SAFETY_FILTER_EPSILON", None)
+            if EPS is None: raise ValueError("LRSF_SAFETY_FILTER_EPSILON must be provided if using LRSF!") 
+            if safety_val > EPS:
+                return task_action, False
+            else:
+                return self.actor.get_actions(observation)[0], True
+            
+        elif use_qcbf:
+            # Use the QCBF approach
+            QCBF_SAFETY_FILTER_EPSILON = self.safety_filter_args.get("QCBF_SAFETY_FILTER_EPSILON", None)
+            if QCBF_SAFETY_FILTER_EPSILON is None: raise ValueError("QCBF_SAFETY_FILTER_EPSILON must be provided if using QCBF!")
+            
+            q1_t_values = self.target_q_network_1(observation).gather(1, task_action).view(-1)
+            q2_t_values = self.target_q_network_2(observation).gather(1, task_action).view(-1)
+            q_t_value = torch.min(q1_t_values, q2_t_values).item()
+            
+            safety_threshold = QCBF_SAFETY_FILTER_EPSILON * safety_val
+            
+            if q_t_value > safety_threshold:
+                return task_action, False
+            else:
+                safe_action = self.actor.get_actions(observation)[0]
+                return safe_action, True
+        
+        else:
+            # If no safety filter is used, return the task action
+            print("\033[33mWarning: No safety filter is used. Returning task action as is.\033[0m")
+            return task_action, False
+              
     def learn(self,
               total_timesteps: int,
               ) -> None:

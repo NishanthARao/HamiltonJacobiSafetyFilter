@@ -95,7 +95,6 @@ class SafeDQN:
             if self.enable_safety_filter:
                 l_values = data.l_values.flatten()
                 future_safety_val = torch.min(l_values, target_max)
-                #td_target = (1 - self.gamma) * l_values + self.gamma * future_safety_val
                 td_target = torch.where(
                     data.dones.flatten() == 0,
                     (1 - self.gamma) * l_values + self.gamma * future_safety_val,
@@ -226,8 +225,6 @@ class SafeDQN:
                 )
                 
             real_next_obs = next_obs.copy()
-            # if truncated:
-            #     real_next_obs = info['final_observation']
             
             done = terminated or truncated
             self.replay_buffer.add(obs, real_next_obs, action, reward, terminated, info)

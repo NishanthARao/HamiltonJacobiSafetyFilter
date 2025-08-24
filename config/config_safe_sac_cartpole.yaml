@@ -21,16 +21,18 @@ target_entropy_scale: 0.25    #https://www.reddit.com/r/reinforcementlearning/co
 learning_starts: 30_000
 train_frequency: 4
 eval_model: True
-train_model: True
+#eval_model_path: "/home/jarvis/safe_robotics_lab/Projects/HamiltonJacobiSafetyFilter/logs/sac_discrete_cartpole_2025-08-24_11-45-16/model"
+eval_model_path: False
+train_model: False
 manual_mode: False
 safety_filter_args:
-  PROB_NEAR_BOUNDARY: 0.0
+  PROB_NEAR_BOUNDARY: 1.0
   USE_SAFETY_FILTER: True
   GAMMA_START: 0.85
   GAMMA_END: 0.99
   GAMMA_ANNEAL_STEPS: 250_000
   LRSF_SAFETY_FILTER_EPSILON: 0.595
-  QCBF_SAFETY_FILTER_EPSILON: 0.965
+  QCBF_SAFETY_FILTER_EPSILON: 0.985
   SAFE_MARGIN_VALUES:
     pos: 2.4
     theta: 0.2

@@ -208,7 +208,7 @@ class SafeSACContinuous:
         # Value here is computed from Q(s, a) as:
         # E_{a∼π(a∣s)}​[Q(s,a)−αlogπ(a∣s)]
         # =>  approx_V = min(Q1(s, a), Q2(s, a)) − alpha * log_prob
-        # But if \alpha -> 0 during training, then, approx_V = min(Q1(s, a), Q2(s, a))
+        # But if α -> 0 during training, then, approx_V = min(Q1(s, a), Q2(s, a))
         
         self.target_q_network_1.eval()
         self.target_q_network_2.eval()
@@ -219,13 +219,13 @@ class SafeSACContinuous:
         if task_action is None:
                 return self.actor.get_actions(observation)[0], True
         
+        # To estimate the safety value function
+        _, _, mean_mu_s = self.actor.get_actions(observation)
+        q1_da_values = self.target_q_network_1(observation, mean_mu_s)
+        q2_da_values = self.target_q_network_2(observation, mean_mu_s)
+        safety_val = torch.min(q1_da_values, q2_da_values).item()
+        
         if use_lrsf:
-            
-            # To estimate the safety value function
-            _, _, mean_mu_s = self.actor.get_actions(observation)
-            q1_da_values = self.target_q_network_1(observation, mean_mu_s)
-            q2_da_values = self.target_q_network_2(observation, mean_mu_s)
-            safety_val = torch.min(q1_da_values, q2_da_values).item()
             
             EPS = self.safety_filter_args.get("LRSF_SAFETY_FILTER_EPSILON", None)
             if EPS is None: raise ValueError("LRSF_SAFETY_FILTER_EPSILON must be provided if using LRSF!") 
@@ -243,12 +243,6 @@ class SafeSACContinuous:
             q1_ta_values = self.target_q_network_1(observation, task_action)
             q2_ta_values = self.target_q_network_2(observation, task_action)
             q_ta_value = torch.min(q1_ta_values, q2_ta_values).item()
-            
-            # To estimate the safety value function
-            _, _, mean_mu_s = self.actor.get_actions(observation)
-            q1_da_values = self.target_q_network_1(observation, mean_mu_s)
-            q2_da_values = self.target_q_network_2(observation, mean_mu_s)   
-            safety_val = torch.min(q1_da_values, q2_da_values).item()
             
             safety_threshold = QCBF_SAFETY_FILTER_EPSILON * safety_val
             

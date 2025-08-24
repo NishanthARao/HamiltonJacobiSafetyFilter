@@ -4,7 +4,6 @@ import yaml
 import wandb
 import torch
 import random
-import argparse
 import numpy as np
 import safety_envs.envs
 import gymnasium as gym
@@ -54,7 +53,6 @@ torch.manual_seed(config["seed"])
 torch.backends.cudnn.deterministic = config["torch_deterministic"]
 device = torch.device("cuda" if torch.cuda.is_available() and config["cuda"] else "cpu")
 
-#env = gym.make(config["env_id"])
 env = gym.make(config["env_id"], safety_filter_args=config.get("safety_filter_args", None), reset_noise_scale=config.get("reset_noise_scale", 0.1),) 
 env = gym.wrappers.RecordEpisodeStatistics(env)
 env.action_space.seed(config["seed"])
@@ -121,7 +119,6 @@ print(f"Model saved to {model_dir}")
 if config["eval_model"] and not config["manual_mode"]:
     
     eval_env = gym.make(config["env_id"], safety_filter_args=config.get("safety_filter_args", None), eval_mode = True, render_mode="rgb_array", reset_noise_scale=config.get("reset_noise_scale", 0.1),)
-    #eval_env = gym.make(config["env_id"], render_mode="rgb_array")
     eval_env = gym.wrappers.RecordVideo(eval_env, video_path, episode_trigger=lambda x: True)
 
     total_reward = 0
@@ -138,27 +135,11 @@ if config["eval_model"] and not config["manual_mode"]:
         MAX_EPISODE_STEPS = 2000
         while not done:
             obs_tensor = torch.tensor(obs, dtype=torch.float32, device=model.device).unsqueeze(0)
-            #rand_action = eval_env.action_space.sample() if random.random() < 0.75 else None
-            
-            #rand_action = eval_env.action_space.sample()
             rand_action = np.random.uniform(-1, 1, size=(1,))
-            #rand_action = 0
-            
-            # abcd = model._consult_safety_filter(obs_tensor, task_action=rand_action, use_qcbf=True)
-            # if model.target_network(obs_tensor).max(1)[0].item() > config["safety_filter_args"]["SAFETY_FILTER_EPSILON"] and rand_action is not None:
-            #     # Task policy is random inputs to the model
-            #     action = eval_env.action_space.sample()
-            #     eval_env.unwrapped.safety_filter_in_use = False
-            # else:
-            #     # Safety filter policy
-            #     action = model._predict_action(epsilon=0.0, observation=obs)
-            #     eval_env.unwrapped.safety_filter_in_use = True
             action, filter_in_use = model.consult_safety_filter(obs_tensor, task_action=rand_action, use_qcbf=True)
             safety_filter_interventions += filter_in_use
             eval_env.unwrapped.safety_filter_in_use = filter_in_use
-            #action, _, _ = model.actor.get_actions(obs_tensor)
             obs, reward, terminated, truncated, info = eval_env.step(action.detach().view(-1))
-            #done = terminated or truncated
             eps_step += 1
             done = terminated or eps_step >= MAX_EPISODE_STEPS
             epsisode_reward += reward
@@ -176,9 +157,7 @@ if config["eval_model"] and not config["manual_mode"]:
         for i, video_name in enumerate(video_path.glob("*.mp4")):
             wandb.log({"Viz/video": wandb.Video(str(video_name), format="mp4")})
         wandb.log({"avg_statistics/average_reward": avg_reward},)
-        
-    #eval_env.close()
-    
+
 elif config["eval_model"] and config["manual_mode"]:
     
     eval_env = gym.make(config["env_id"], safety_filter_args=config.get("safety_filter_args", None), render_mode="human", eval_mode=True)
@@ -204,10 +183,10 @@ elif config["eval_model"] and config["manual_mode"]:
             ## Keyboard inputs to control the agent
                 if isData():
                     key = sys.stdin.read(1)
-                    print(key, end="\r")
-                    if key == 'a':
+                    print(f"Command: {key}", end="\r")
+                    if key == 'd':
                         manual_action = np.array([-1.5,])
-                    elif key == 'd':
+                    elif key == 'a':
                         manual_action = np.array([1.5,])
                     elif key == 'q':
                         print("Exiting test mode.")
@@ -218,7 +197,6 @@ elif config["eval_model"] and config["manual_mode"]:
                         obs, _ = eval_env.reset()
                     else:
                         print(f"Unknown command: {key}")
-
                 else:
                     manual_action = None
 
@@ -227,14 +205,11 @@ elif config["eval_model"] and config["manual_mode"]:
                 action, filter_in_use = model.consult_safety_filter(obs_tensor, task_action=manual_action, use_qcbf=True)
                 eval_env.unwrapped.safety_filter_in_use = filter_in_use
                 obs, reward, terminated, truncated, info = eval_env.step(action.detach().view(-1).numpy())
-                #print(terminated, info)
                 if terminated: 
                     break
             
     finally:
         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
-        
-        #eval_env.close()
-        
+
 if not config.get("dont_log", True): run.finish()
 env.close()
