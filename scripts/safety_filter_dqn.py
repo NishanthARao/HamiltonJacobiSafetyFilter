@@ -51,7 +51,7 @@ torch.manual_seed(config["seed"])
 torch.backends.cudnn.deterministic = config["torch_deterministic"]
 device = torch.device("cuda" if torch.cuda.is_available() and config["cuda"] else "cpu")
 
-env = gym.make(config["env_id"], safety_filter_args=config.get("safety_filter_args", None), eval_mode=True)
+env = gym.make(config["env_id"], safety_filter_args=config.get("safety_filter_args", None))
 env = gym.wrappers.RecordEpisodeStatistics(env)
 env.action_space.seed(config["seed"])
 
@@ -108,6 +108,8 @@ if not config["manual_mode"]:
         done = False
         epsisode_reward = 0
         eps_step = 0
+        safety_filter_interventions = 0
+        MAX_EPISODE_STEPS = 2000
         while not done:
             obs_tensor = torch.tensor(obs, dtype=torch.float32, device=model.device).unsqueeze(0)
             #rand_action = eval_env.action_space.sample() if random.random() < 0.75 else None
@@ -125,15 +127,19 @@ if not config["manual_mode"]:
             #     action = model._predict_action(epsilon=0.0, observation=obs)
             #     eval_env.unwrapped.safety_filter_in_use = True
             action, filter_in_use = model._consult_safety_filter(obs_tensor, task_action=rand_action, use_qcbf=True)
+            safety_filter_interventions += filter_in_use
             eval_env.unwrapped.safety_filter_in_use = filter_in_use
             obs, reward, terminated, truncated, info = eval_env.step(action)
             #done = terminated or truncated
             eps_step += 1
-            done = terminated or eps_step >= 2000
+            done = terminated or eps_step >= MAX_EPISODE_STEPS
             epsisode_reward += reward
         total_reward += epsisode_reward
-        print(f"Episode {episode + 1}/{num_episodes} - Reward: {epsisode_reward}")
-        wandb.log({"eval/episode_reward": epsisode_reward},)
+        print(f"Episode {episode + 1}/{num_episodes} - Reward: {epsisode_reward}, Safety Filter Interventions: {safety_filter_interventions}/{MAX_EPISODE_STEPS} ({(safety_filter_interventions * 100)/MAX_EPISODE_STEPS})%")
+        wandb.log({
+            "eval/episode_reward": epsisode_reward,
+            "eval/safety_filter_interventions": safety_filter_interventions,
+            },)
     avg_reward = total_reward / num_episodes
     print(f"Average Reward over {num_episodes} episodes: {avg_reward}")
     wandb.log({"avg_statistics/average_reward": avg_reward},)
@@ -170,7 +176,7 @@ else:
             ## Keyboard inputs to control the agent
                 if isData():
                     key = sys.stdin.read(1)
-                    print(key)
+                    print(key, end="\r")
                     if key == 'a':
                         manual_action = np.array([0,])
                     elif key == 'd':
@@ -180,7 +186,7 @@ else:
                         break
                     elif key == 'r':
                         print("Resetting environment.")
-                        obs_array, _ = eval.reset()
+                        obs_array, _ = eval_env.reset()
                     else:
                         print(f"Unknown command: {key}")
 

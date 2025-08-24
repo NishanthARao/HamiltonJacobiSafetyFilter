@@ -18,6 +18,7 @@ class SafeSACDiscrete:
                  env: gym.Env,
                  q_learning_rate: float = 3e-4,
                  policy_learning_rate: float = 3e-4,
+                 alpha_learning_rate: Optional[float] = None,
                  buffer_size: int = int(1e6),
                  learning_starts: int = int(2e4),
                  batch_size: int = 128,
@@ -36,6 +37,7 @@ class SafeSACDiscrete:
         self.env = env
         self.q_learning_rate = q_learning_rate
         self.policy_learning_rate = policy_learning_rate
+        self.alpha_learning_rate = alpha_learning_rate if alpha_learning_rate is not None else q_learning_rate * 0.1
         self.buffer_size = buffer_size
         self.learning_starts = learning_starts
         self.batch_size = batch_size
@@ -115,7 +117,21 @@ class SafeSACDiscrete:
             q2_next_target = self.target_q_network_2(data.next_observations)
             
             min_qf_next_target = (next_state_action_probs * (torch.min(q1_next_target, q2_next_target) - self.alpha * next_state_log_pi)).sum(dim=1)
-            next_q_value = data.rewards.flatten() + (1 - data.dones.flatten()) * self.gamma * min_qf_next_target
+            
+            if self.enable_safety_filter:
+                l_values = data.l_values.flatten()
+                future_safety_val = torch.min(l_values, min_qf_next_target)
+                next_q_value = torch.where(
+                                        data.dones.flatten() == 0,
+                                        (1 - self.gamma) * l_values + self.gamma * future_safety_val,
+                                        l_values,
+                                    )
+                
+                # Anneal gamma
+                fraction = min(float(global_step) / self.gamma_anneal_steps, 1.0)
+                self.gamma = self.gamma_start + fraction * (self.gamma_end - self.gamma_start)
+            else:
+                next_q_value = data.rewards.flatten() + (1 - data.dones.flatten()) * self.gamma * min_qf_next_target
         
         q1_values = self.q_network_1(data.observations)
         q2_values = self.q_network_2(data.observations)
@@ -130,10 +146,10 @@ class SafeSACDiscrete:
         self.q_optimizer.step()
         
         _, log_pi, action_probs = self.actor.get_actions(data.observations)
-        with torch.no_grad():
-            q1_values = self.q_network_1(data.observations)
-            q2_values = self.q_network_2(data.observations)
-            min_q_values = torch.min(q1_values, q2_values)
+
+        q1_values = self.q_network_1(data.observations)
+        q2_values = self.q_network_2(data.observations)
+        min_q_values = torch.min(q1_values, q2_values)
             
         actor_loss = (action_probs * (self.alpha * log_pi - min_q_values)).mean()
         
@@ -142,8 +158,11 @@ class SafeSACDiscrete:
         self.actor_optimizer.step()
         
         if self.autotune_alpha:
-            alpha_loss = (action_probs.detach() * (-self.log_alpha.exp() * (log_pi + self.target_entropy).detach())).mean()
-            self.alpha_optimizer.zero_grad()
+            with torch.no_grad():
+                _, log_pi, action_probs = self.actor.get_actions(data.observations)
+            alpha_loss = (action_probs * (-self.log_alpha.exp() * (log_pi + self.target_entropy))).mean()    
+            
+            self.alpha_optimizer.zero_grad()    
             alpha_loss.backward()
             self.alpha_optimizer.step()
             self.alpha = self.log_alpha.exp().item()
@@ -159,6 +178,7 @@ class SafeSACDiscrete:
                 "losses/alpha_loss": alpha_loss.item() if self.autotune_alpha else 0.0,
                 "charts/alpha": self.alpha,
                 "charts/SPS": int(global_step / (time.time() - self.start_time)),
+                "charts/gamma": self.gamma,
                 }, step=global_step,
             )
             

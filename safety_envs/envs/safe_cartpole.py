@@ -93,21 +93,18 @@ class SafeCartPoleEnv(gym.Env):
         max_episode_steps: int = 500,
         render_mode: Optional[str] = None,
         safety_filter_args: Optional[dict] = None,
-        eval_mode : bool = False,
     ):
         super().__init__()
         self.gravity = 9.8
         self.masscart = 1.0
-        self.masspole = 0.1
+        self.masspole = 0.08
         self.total_mass = self.masspole + self.masscart
         self.length = 0.5  # actually half the pole's length
         self.polemass_length = self.masspole * self.length
-        self.force_mag = 10.0
+        self.force_mag = 15.0
         self.tau = 0.02  # seconds between state updates
         self.kinematics_integrator = "euler"
         self.max_episode_steps = max_episode_steps
-        self.eval_mode = eval_mode
-
         # Angle at which to fail the episode
         self.theta_threshold_radians = 12 * 2 * math.pi / 360
         self.x_threshold = 2.4
@@ -152,14 +149,23 @@ class SafeCartPoleEnv(gym.Env):
         if self.safe_margin_values is None:
             # Default safe margin values
             self.safe_margin_values = {
-                "pos": 2.0,    # Safe margin for cart position
+                "pos": 2.4,    # Safe margin for cart position
                 "theta": 0.2,  # Safe margin for pole angle
             }
         self.safety_filter_in_use = False
+        
+        self.terminated_because = {
+            "POS": 0,
+            "THETA": 0,
+        }
+        
+        self.prob_near_boundary = safety_filter_args.get("PROB_NEAR_BOUNDARY", 0.5) if safety_filter_args else 0.5
         #########################################
         
         
-    def _calculate_l_value(self, state: np.ndarray) -> np.ndarray:
+    def _calculate_l_value(self, 
+                           state: np.ndarray,
+                           ) -> Tuple[float, int]:
         """
         Calculates the safety function l(x) as the "signed distance" to the failure set.
         l(x) >= 0 indicates a safe state.
@@ -169,7 +175,9 @@ class SafeCartPoleEnv(gym.Env):
         output: Returns a vector of shape (num_envs,) with the safety function values.
         """
         
-        x, vel, theta, om = state
+        POS_GEQ_THETA = 1  # 1: POS, 2: THETA
+        
+        x, _, theta, _ = state
         
         # Calculate the safety function values
         l_pos = (self.safe_margin_values["pos"] - np.abs(x)) / self.safe_margin_values["pos"]
@@ -186,10 +194,11 @@ class SafeCartPoleEnv(gym.Env):
         # Combine the safety function values
         # Calculate minimum value
         l_value = min(l_pos, l_theta)
+        if l_theta > l_pos: POS_GEQ_THETA = 2
         
-        return l_value
+        return l_value, POS_GEQ_THETA
     
-    def _generate_random_state(self, prob_near_boundary = 0.3) -> np.ndarray:
+    def _generate_random_state(self,) -> np.ndarray:
         """
         Generates a random state for the environment. We need the safety filter to be robust
         and thus, we encourage the reset to happen (~60% of the time) near the boundaries of the safe set, as 
@@ -200,10 +209,10 @@ class SafeCartPoleEnv(gym.Env):
         """
 
         # Generate random state near the boundaries of the safe set
-        X_1 = self.safe_margin_values["pos"] - 0.4
-        X_2 = self.safe_margin_values["pos"] - 1.0
+        X_1 = self.safe_margin_values["pos"] - 1.5
+        X_2 = self.safe_margin_values["pos"] - 2.3
         THETA_1 = self.safe_margin_values["theta"] - 0.1
-        THETA_2 = self.safe_margin_values["theta"] - 0.15
+        THETA_2 = self.safe_margin_values["theta"] - 0.19
         
         assert X_2 > 0 and THETA_2 > 0, \
             "absolute value of lower bounds are negative, try to keep them closer to the margin values"
@@ -211,12 +220,12 @@ class SafeCartPoleEnv(gym.Env):
             "lower bounds are greater than upper bounds!"
 
         # For (prob_near_boundary * 100)% of the time, generate a state near the boundaries of the safe set
-        is_near_boundaries = self.np_random.uniform(0, 1) < prob_near_boundary
+        is_near_boundaries = self.np_random.uniform(0, 1) < self.prob_near_boundary
         # 50% of the time, generate a positive or negative value near the boundaries
         coin_flip = self.np_random.uniform(0, 1) < 0.5
         
         random_x = (self.np_random.uniform(low=-X_1, high=-X_2) if coin_flip else self.np_random.uniform(low=X_2, high=X_1)) if is_near_boundaries else self.np_random.uniform(low=-X_2, high=X_2)
-        random_vel = self.np_random.uniform(low=-0.05, high=0.05) 
+        random_vel = self.np_random.uniform(low=-0.1, high=0.1) if abs(random_x) < 0.4 else self.np_random.uniform(low=-0.05, high=0.05)
         random_theta = (self.np_random.uniform(low=-THETA_1, high=-THETA_2) if coin_flip else self.np_random.uniform(low=THETA_2, high=THETA_1)) if is_near_boundaries else self.np_random.uniform(low=-THETA_2, high=THETA_2)
         random_om = self.np_random.uniform(low=-0.05, high=0.05)
         
@@ -268,12 +277,18 @@ class SafeCartPoleEnv(gym.Env):
         if self.use_safety_filter:
         
             # Calculate the safety function values
-            l_value = self._calculate_l_value(self.state)
+            l_value, POS_GEQ_THETA = self._calculate_l_value(self.state)
         
-            terminated = bool(self._calculate_l_value(self.state) < 0.0)  # Unsafe state if l(x) < 0
+            terminated = bool(l_value < 0.0)  # Unsafe state if l(x) < 0
             #terminated = False
             
+            if POS_GEQ_THETA == 1 and terminated:
+                self.terminated_because["POS"] += 1
+            elif POS_GEQ_THETA == 2 and terminated:
+                self.terminated_because["THETA"] += 1
+            
             info["l_value"] = l_value
+            info["terminated_because"] = self.terminated_because
             
         else:
             terminated = bool(
@@ -298,7 +313,6 @@ class SafeCartPoleEnv(gym.Env):
         # ##################################
 
         # reward = np.ones_like(terminated, dtype=np.float32)
-        
         
         if not terminated: reward =  1.0
         elif self.steps_beyond_terminated is None:
@@ -329,8 +343,8 @@ class SafeCartPoleEnv(gym.Env):
     ):
         super().reset(seed=seed)
         ##################
-        if self.use_safety_filter and not self.eval_mode:
-            self.state = self._generate_random_state(prob_near_boundary=0.5)
+        if self.use_safety_filter:
+            self.state = self._generate_random_state()
         else:
             self.low, self.high = utils.maybe_parse_reset_bounds(
                 options, -0.05, 0.05  # default low

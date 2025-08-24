@@ -167,7 +167,7 @@ class SafeInvertedPendulumEnv(MujocoEnv, utils.EzPickle):
         ## This is primarily used to compare the training of the fallback policy
         ## with the vanilla policy (i.e., when training without safety requirements
         ## since the rewards and the termination conditions are different)
-        self.prob_near_boundary = safety_filter_args.get("PROB_NEAR_BOUNDARY", 0.1) if safety_filter_args else 0.1
+        self.prob_near_boundary = safety_filter_args.get("PROB_NEAR_BOUNDARY", 0.5) if safety_filter_args else 0.5
         self.use_safety_filter = safety_filter_args["USE_SAFETY_FILTER"] if safety_filter_args else False
         self.safe_margin_values = safety_filter_args["SAFE_MARGIN_VALUES"] if safety_filter_args and "SAFE_MARGIN_VALUES" in safety_filter_args else None
         if self.safe_margin_values is None:

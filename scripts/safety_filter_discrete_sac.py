@@ -15,7 +15,7 @@ scripts_dir = Path(os.path.dirname(os.path.abspath(__file__)))
 project_dir = scripts_dir.parent
 config_dir = project_dir / "config"
 
-with open(config_dir / "config_sac_cartpole.yaml", "r") as file:
+with open(config_dir / "config_safe_sac_cartpole.yaml", "r") as file:
     config = yaml.safe_load(file)
 
 logs_dir = project_dir / "logs"
@@ -52,7 +52,7 @@ torch.backends.cudnn.deterministic = config["torch_deterministic"]
 device = torch.device("cuda" if torch.cuda.is_available() and config["cuda"] else "cpu")
 
 #env = gym.make(config["env_id"])
-env = gym.make(config["env_id"], safety_filter_args=config.get("safety_filter_args", None), eval_mode=True)
+env = gym.make(config["env_id"], safety_filter_args=config.get("safety_filter_args", None))
 env = gym.wrappers.RecordEpisodeStatistics(env)
 env.action_space.seed(config["seed"])
 
@@ -124,7 +124,7 @@ if config["eval_model"] and not config["manual_mode"]:
     num_episodes = 10
     print(f"Evaluating the model for {num_episodes} episodes...")
     model.target_q_network_1.eval()  # Set the target network to evaluation mode
-    model.target_q_network_1.eval()
+    model.target_q_network_2.eval()
     for episode in range(num_episodes):
         obs, _ = eval_env.reset()
         done = False
@@ -164,7 +164,6 @@ if config["eval_model"] and not config["manual_mode"]:
     for i, video_name in enumerate(video_path.glob("*.mp4")):
         wandb.log({"Viz/video": wandb.Video(str(video_name), format="mp4")})
         
-    eval_env.close()
     
 elif config["eval_model"] and config["manual_mode"]:
     

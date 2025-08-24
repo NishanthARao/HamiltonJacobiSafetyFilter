@@ -17,7 +17,7 @@ class SafeDQN:
     
     def __init__(self, 
                  env: gym.Env,
-                 learning_rate: float = 2.5e-4,
+                 learning_rate: float = 3e-4,
                  buffer_size: int = 10_000,
                  learning_starts: int = 10_000,
                  batch_size: int = 128, 
@@ -36,7 +36,7 @@ class SafeDQN:
         
         
         self.env = env
-        self.learning_rate = learning_rate
+        self.learning_rate = float(learning_rate)
         self.buffer_size = buffer_size
         self.learning_starts = learning_starts
         self.batch_size = batch_size
@@ -95,7 +95,12 @@ class SafeDQN:
             if self.enable_safety_filter:
                 l_values = data.l_values.flatten()
                 future_safety_val = torch.min(l_values, target_max)
-                td_target = (1 - self.gamma) * l_values + self.gamma * future_safety_val
+                #td_target = (1 - self.gamma) * l_values + self.gamma * future_safety_val
+                td_target = torch.where(
+                    data.dones.flatten() == 0,
+                    (1 - self.gamma) * l_values + self.gamma * future_safety_val,
+                    l_values,
+                )
                 
                 # Anneal gamma
                 fraction = min(1.0, global_step / self.gamma_anneal_steps)
@@ -156,7 +161,7 @@ class SafeDQN:
             safety_val = self.target_network(
                 torch.tensor(observation, dtype=torch.float32, device=self.device).unsqueeze(0) if isinstance(observation, np.ndarray) else observation
             ).max(1)[0].item()
-            if safety_val > self.safety_filter_args.get("SAFETY_FILTER_EPSILON", 0.5):
+            if safety_val > self.safety_filter_args.get("LRSF_SAFETY_FILTER_EPSILON", 0.5):
                 return task_action, False
             else:
                 safe_action = self._predict_action(epsilon=0.0, observation=observation)
@@ -164,7 +169,7 @@ class SafeDQN:
             
         elif use_qcbf:
             # Use the QCBF approach
-            GAMMA_QCBF = self.safety_filter_args.get("GAMMA_QCBF", 0.99)
+            GAMMA_QCBF = self.safety_filter_args.get("QCBF_SAFETY_FILTER_EPSILON", 0.99)
             q_values_obs = self.target_network(
                 torch.tensor(observation, dtype=torch.float32, device=self.device).unsqueeze(0) if isinstance(observation, np.ndarray) else observation
             )
@@ -188,8 +193,6 @@ class SafeDQN:
             print("\033[33mWarning: No safety filter is used. Returning task action as is.\033[0m")
             return task_action, False
 
-        
-    
     def learn(self, 
               total_timesteps: int,
              ) -> None:
@@ -215,12 +218,12 @@ class SafeDQN:
             next_obs, reward, terminated, truncated, info = self.env.step(action)
             
             if info and "episode" in info:
-                if info['episode']['l'] > 10:  # log only full episodes
-                    wandb.log({
-                            "charts/episode_length": info['episode']['l'],
-                            "charts/episode_reward": info['episode']['r'],
-                        }, step=global_step
-                    )
+                wandb.log({
+                        "charts/episode_length": info['episode']['l'],
+                        "charts/episode_reward": info['episode']['r'],
+                        "charts/terminated_because": info.get("terminated_because", None),
+                    }, step=global_step
+                )
                 
             real_next_obs = next_obs.copy()
             # if truncated:
@@ -228,7 +231,6 @@ class SafeDQN:
             
             done = terminated or truncated
             self.replay_buffer.add(obs, real_next_obs, action, reward, terminated, info)
-
             obs = next_obs
             
             if done:

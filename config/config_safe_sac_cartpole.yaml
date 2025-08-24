@@ -1,0 +1,36 @@
+exp_name: "sac_discrete_cartpole"
+seed: 1
+torch_deterministic: True
+cuda: False
+wandb_project_name: safe_sac_discrete_filter
+wandb_entity: None
+env_id: "SafeCartPole-v1"
+total_timesteps: 1_000_000
+q_learning_rate: 3e-4
+policy_learning_rate: 5e-4
+alpha_learning_rate: 5e-5
+buffer_size: 1_000_000
+gamma: 0.99
+tau: 1.0
+target_network_frequency: 4000
+batch_size: 64
+alpha: 1.0
+autotune_alpha: True
+#target_entropy_scale: 0.89
+target_entropy_scale: 0.25    #https://www.reddit.com/r/reinforcementlearning/comments/zit8kr/comment/iztvl0a/?utm_source=share&utm_medium=web3x&utm_name=web3xcss&utm_term=1&utm_content=share_button
+learning_starts: 30_000
+train_frequency: 4
+eval_model: True
+train_model: True
+manual_mode: False
+safety_filter_args:
+  PROB_NEAR_BOUNDARY: 0.0
+  USE_SAFETY_FILTER: True
+  GAMMA_START: 0.85
+  GAMMA_END: 0.99
+  GAMMA_ANNEAL_STEPS: 250_000
+  LRSF_SAFETY_FILTER_EPSILON: 0.595
+  QCBF_SAFETY_FILTER_EPSILON: 0.965
+  SAFE_MARGIN_VALUES:
+    pos: 2.4
+    theta: 0.2

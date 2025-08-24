@@ -134,7 +134,7 @@ if config["eval_model"] and not config["manual_mode"]:
         done = False
         epsisode_reward = 0
         eps_step = 0
-        safety_filer_interventions = 0
+        safety_filter_interventions = 0
         MAX_EPISODE_STEPS = 2000
         while not done:
             obs_tensor = torch.tensor(obs, dtype=torch.float32, device=model.device).unsqueeze(0)
@@ -154,7 +154,7 @@ if config["eval_model"] and not config["manual_mode"]:
             #     action = model._predict_action(epsilon=0.0, observation=obs)
             #     eval_env.unwrapped.safety_filter_in_use = True
             action, filter_in_use = model.consult_safety_filter(obs_tensor, task_action=rand_action, use_qcbf=True)
-            safety_filer_interventions += filter_in_use
+            safety_filter_interventions += filter_in_use
             eval_env.unwrapped.safety_filter_in_use = filter_in_use
             #action, _, _ = model.actor.get_actions(obs_tensor)
             obs, reward, terminated, truncated, info = eval_env.step(action.detach().view(-1))
@@ -163,11 +163,11 @@ if config["eval_model"] and not config["manual_mode"]:
             done = terminated or eps_step >= MAX_EPISODE_STEPS
             epsisode_reward += reward
         total_reward += epsisode_reward
-        print(f"Episode {episode + 1}/{num_episodes} - Reward: {epsisode_reward}, Safety Filter Interventions: {safety_filer_interventions}/{MAX_EPISODE_STEPS} ({(safety_filer_interventions * 100)/MAX_EPISODE_STEPS})%")
+        print(f"Episode {episode + 1}/{num_episodes} - Reward: {epsisode_reward}, Safety Filter Interventions: {safety_filter_interventions}/{MAX_EPISODE_STEPS} ({(safety_filter_interventions * 100)/MAX_EPISODE_STEPS})%")
         if not config.get("dont_log", True):
             wandb.log({
                         "eval/episode_reward": epsisode_reward,
-                        "eval/safety_filter_interventions": safety_filer_interventions,
+                        "eval/safety_filter_interventions": safety_filter_interventions,
                     },)
     avg_reward = total_reward / num_episodes
     print(f"Average Reward over {num_episodes} episodes: {avg_reward}")

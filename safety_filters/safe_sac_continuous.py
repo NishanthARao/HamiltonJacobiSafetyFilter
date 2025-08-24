@@ -121,7 +121,11 @@ class SafeSACContinuous:
             if self.enable_safety_filter:
                 l_values = data.l_values.flatten()
                 future_safety_val = torch.min(l_values, min_qf_next_target.view(-1))
-                next_q_value = (1-self.gamma) * l_values + (1 - data.dones.flatten()) * self.gamma * future_safety_val
+                next_q_value = torch.where(
+                                        data.dones.flatten() == 0,
+                                        (1-self.gamma) * l_values + self.gamma * future_safety_val,
+                                        l_values,
+                                    )
                 
                 # Anneal gamma
                 fraction = min(1.0, global_step / self.gamma_anneal_steps)
@@ -171,7 +175,7 @@ class SafeSACContinuous:
                 "losses/q2_mean_values": q2_a_values.mean().item(),
                 "losses/q1_loss": q1_loss.item(),
                 "losses/q2_loss": q2_loss.item(),
-                "losses/q_loss": q_loss.item()/2.0,
+                "losses/q_loss": q_loss.item() / 2.0,
                 "losses/actor_loss": actor_loss.item(),
                 "losses/alpha_loss": alpha_loss.item() if self.autotune_alpha else 0.0,
                 "charts/alpha": self.alpha,
